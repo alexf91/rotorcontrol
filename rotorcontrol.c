@@ -10,15 +10,36 @@
 #include "system.h"
 #include "adc.h"
 
-#define LCD_SLICE 0
-
 #define BUFSIZE 32
 
-#define TOLERANCE 2
 #define AZ_MIN 0
-#define AZ_MAX 360
+#define AZ_MAX 450
 #define EL_MIN 0
 #define EL_MAX 180
+
+#define AVERAGE_LENGTH 172
+
+typedef struct {
+    uint8_t index;
+    uint16_t buffer[AVERAGE_LENGTH];
+} average_t;
+
+average_t azimuth_avg = {0};
+average_t elevation_avg = {0};
+
+void average_add_sample(average_t *avg, uint16_t sample) {
+    avg->buffer[avg->index] = sample;
+    avg->index = (avg->index % AVERAGE_LENGTH);
+}
+
+uint16_t average_get_value(average_t *avg) {
+    uint32_t sum = 0;
+    for(uint16_t i=0; i<AVERAGE_LENGTH; i++) {
+        sum += avg->buffer[avg->index];
+    }
+
+    return sum / AVERAGE_LENGTH;
+}
 
 void rotator_stop() {
     ROTOR_PORT &= ~((1<<ROTOR_UP) | (1<<ROTOR_DOWN) | (1<<ROTOR_LEFT) | (1<<ROTOR_RIGHT));
@@ -33,6 +54,12 @@ void elevation_stop() {
 }
 
 void rotor_start(uint8_t dir) {
+    if(dir == ROTOR_RIGHT || dir == ROTOR_LEFT)
+        ROTOR_PORT &= ~((1<<ROTOR_RIGHT) | (1<<ROTOR_LEFT));
+
+    if(dir == ROTOR_UP || dir == ROTOR_DOWN)
+        ROTOR_PORT &= ~((1<<ROTOR_UP) | (1<<ROTOR_DOWN));
+
     ROTOR_PORT |= (1<<dir);
 }
 
@@ -87,9 +114,8 @@ void rotator_control() {
             size = 0;
         }
     }
-    
+
     char uart_buffer[BUFSIZE];
-    uint16_t tmp;
     if(new_command) {
         if(buffer[0] == 'S' && size == 1) {
             rotator_stop();
@@ -100,7 +126,7 @@ void rotator_control() {
         else if(buffer[0] == 'W' && size == 8) {
             buffer[4] = '\0';
             buffer[8] = '\0';
-            
+
             if(atoi_save(&buffer[1], &az_target, AZ_MIN, AZ_MAX) == 0 &&
                atoi_save(&buffer[5], &el_target, EL_MIN, EL_MAX) == 0) {
 
@@ -124,8 +150,8 @@ void rotator_control() {
             }
         }
         else if(buffer[0] == 'C' && buffer[1] == '2') {
-            uint16_t az = get_azimuth();
-            uint16_t el = get_elevation();
+            uint16_t az = average_get_value(&azimuth_avg);
+            uint16_t el = average_get_value(&elevation_avg);
             sprintf(uart_buffer, "+0%03u+0%03u\r", az, el);
             uart_puts(uart_buffer);
         }
@@ -154,7 +180,7 @@ void rotator_control() {
             uart_puts("\r\n");
         }
         else if(buffer[0] == 'C' && size == 1) {
-            uint16_t az = get_azimuth();
+            uint16_t az = average_get_value(&azimuth_avg);
             sprintf(uart_buffer, "+0%03u\r", az);
             uart_puts(uart_buffer);
         }
@@ -170,14 +196,14 @@ void rotator_control() {
         size = 0;
         new_command = 0;
     }
-    
-    if(az_running) {
-        int16_t az_diff = az_target - get_azimuth();
 
-        if(az_diff > 0 && abs(az_diff) > TOLERANCE) {
+    if(az_running) {
+        int16_t az_diff = az_target - average_get_value(&azimuth_avg);
+
+        if(az_diff > 0) {
             rotor_start(ROTOR_RIGHT);
         }
-        else if(az_diff < 0 && abs(az_diff) > TOLERANCE) {
+        else if(az_diff < 0) {
             rotor_start(ROTOR_LEFT);
         }
         else {
@@ -187,12 +213,12 @@ void rotator_control() {
     }
 
     if(el_running) {
-        int16_t el_diff = el_target - get_elevation();
+        int16_t el_diff = el_target - average_get_value(&elevation_avg);
 
-        if(el_diff > 0 && abs(el_diff) > TOLERANCE) {
+        if(el_diff > 0) {
             rotor_start(ROTOR_UP);
         }
-        else if(el_diff < 0 && abs(el_diff) > TOLERANCE) {
+        else if(el_diff < 0) {
             rotor_start(ROTOR_DOWN);
         }
         else {
@@ -206,6 +232,7 @@ void rotator_control() {
 int main(void) {
     char display_buffer[16];
     uint8_t local_systick;
+    uint8_t last_systick = 0;
 
     LED_DDR |= (1<<LED);
 
@@ -222,16 +249,23 @@ int main(void) {
     while(1) {
         local_systick = systick_counter();
 
-        if(local_systick == LCD_SLICE) {
-            lcd_clear();
-            sprintf(display_buffer, "AZ: %u", get_azimuth());
-            lcd_string(display_buffer);
-            lcd_setcursor(0, 2);
-            sprintf(display_buffer, "EL: %u", get_elevation());
-            lcd_string(display_buffer);
+        if(local_systick != last_systick) {
+            average_add_sample(&azimuth_avg, get_azimuth());
+            average_add_sample(&elevation_avg, get_elevation());
+
+            if(local_systick == 0) {
+                lcd_clear();
+                sprintf(display_buffer, "AZ: %3u", average_get_value(&azimuth_avg));
+                lcd_string(display_buffer);
+                lcd_setcursor(0, 2);
+                sprintf(display_buffer, "EL: %3u", average_get_value(&elevation_avg));
+                lcd_string(display_buffer);
+            }
+            else {
+                rotator_control();
+            }
         }
-        else {
-            rotator_control();
-        }
+
+        last_systick = local_systick;
     }
 }
