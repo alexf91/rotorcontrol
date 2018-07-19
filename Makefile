@@ -7,15 +7,15 @@ AR = avr-ar
 OBJCOPY = avr-objcopy
 SIZE = avr-size
 
-CFLAGS = -Os -std=gnu11 -mmcu=$(MCU) -Wall -I/usr/avr/include
-OBJECTS = rotorcontrol.o system.o fifo.o uart.o lcd_routines.o adc.o
+CFLAGS = -Os -std=gnu11 -mmcu=$(MCU) -Wall -I/usr/avr/include -DF_CPU=16000000UL
+OBJECTS = rotorcontrol.o system.o uart.o lcd_routines.o adc.o
 
 LDFLAGS = -mmcu=$(MCU)
 
 PROG = avrdude
 PROGFLAGS = -p $(MCU) -P usb -c avrispmkii -e
 
-all: libraries $(PROJECT).hex
+all: $(PROJECT).hex
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $<
@@ -36,4 +36,4 @@ clean:
 	rm -f $(OBJECTS) $(PROJECT).elf $(PROJECT).hex
 
 
-.PHONY: libraries size install
+.PHONY: size install clean

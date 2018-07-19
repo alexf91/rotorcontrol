@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include "config.h"
 
-#define OCR_VALUE ((F_CPU / (64*F_SYSTICK)) - 1)
+#define OCR_VALUE ((F_CPU / (64 * F_SYSTICK)) - 1)
 
 /**
  * @brief Reset the controller

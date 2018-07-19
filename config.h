@@ -3,13 +3,8 @@
 
 #include <avr/io.h>
 
-#define F_CPU       16000000UL
 #define F_SYSTICK   1000UL
-
-/* UART definitions, used in uart.c */
-#define UART_RX_FIFO_SIZE 64
-#define UART_TX_FIFO_SIZE 64
-#define UART_BAUDRATE 115200UL
+#define UART_BAUDRATE 9600UL
 
 /* Pinout */
 #define LED_DDR     DDRB
